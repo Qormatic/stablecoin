@@ -258,7 +258,7 @@ contract DSCEngine is ReentrancyGuard {
 
         // there will also be an arithmetic underflow issue if we try to liquidate a user for more than the collateral they have deposited
         // totalCollateralToRedeem should be >= debtToCover the liquidator is trying to put through
-        // esle user should try to burn less DSC (debtToCover)
+        // else user should try to burn less DSC (debtToCover)
 
         // We want to burn their DSC "debt"
         // And take their collateral
