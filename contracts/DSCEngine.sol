@@ -50,6 +50,7 @@ contract DSCEngine is ReentrancyGuard {
     //////////////////
     // Errors       //
     //////////////////
+
     error DSCEngine__NeedsMoreThanZero();
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error DSCEngine__NotAllowedToken();
@@ -62,11 +63,13 @@ contract DSCEngine is ReentrancyGuard {
     //////////////////
     // Type       //
     //////////////////
+
     using OracleLib for AggregatorV3Interface;
 
     /////////////////////
     // State Variables //
     /////////////////////
+
     uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
     uint256 private constant PRECISION = 1e18; // assumes all supported tokens have 18 decimal places; if you look at wBTC contract you can see it has 8
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // 200% overcollateralized
@@ -85,6 +88,7 @@ contract DSCEngine is ReentrancyGuard {
     /////////////////////
     // Events          //
     /////////////////////
+
     event CollateralDeposited(address indexed user, address indexed token, uint256 indexed amount);
     event CollateralRedeemed(
         address indexed redeemedFrom,
@@ -96,6 +100,7 @@ contract DSCEngine is ReentrancyGuard {
     //////////////////
     // Modifiers    //
     //////////////////
+
     modifier moreThanZero(uint256 amount) {
         if (amount == 0) {
             revert DSCEngine__NeedsMoreThanZero();
@@ -113,6 +118,7 @@ contract DSCEngine is ReentrancyGuard {
     //////////////////
     // Functions    //
     //////////////////
+
     constructor(
         address[] memory tokenAddresses,
         address[] memory priceFeedAddresses,
@@ -122,7 +128,7 @@ contract DSCEngine is ReentrancyGuard {
         if (tokenAddresses.length != priceFeedAddresses.length) {
             revert DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
         }
-        // For example ETH / USD, BTC / USD, MKR / USD, etc
+        // Contract intended to deploy on Polygon; accepting MATIC (18), wETH (18), DAI (18), wBTC (8), USDC (6)
         for (uint256 i = 0; i < tokenAddresses.length; i++) {
             s_priceFeeds[tokenAddresses[i]] = priceFeedAddresses[i];
             s_collateralTokens.push(tokenAddresses[i]);
@@ -359,11 +365,9 @@ contract DSCEngine is ReentrancyGuard {
         return (collateralAdjustedForThreshold * 1e18) / totalDscMinted;
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////
-    // External & Public View & Pure Functions
-    ////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////
+    //////////////////////////////////////////////
+    // External & Public View & Pure Functions  //
+    //////////////////////////////////////////////
 
     function getTokenAmountFromUsd(
         address token,

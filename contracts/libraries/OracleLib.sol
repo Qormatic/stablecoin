@@ -15,7 +15,17 @@ import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/Ag
 library OracleLib {
     error OracleLib__StalePrice();
 
-    uint256 private constant TIMEOUT = 3 hours;
+    // different chains have different timeouts & different tokens can have different timeouts on the same chain
+    //  MATIC (18), wETH (18), DAI (18), wBTC (8), USDC (6)
+
+    uint256 private constant TIMEOUT = 90; // 90 seconds
+
+    // uint256 private constant WETH_TIMEOUT = 70; // 70 seconds
+    // uint256 private constant OTHER_TIMEOUT = 27; // 70 seconds
+    // uint256 private constant WBTC_TIMEOUT = 27; // 27 seconds
+    // uint256 private constant MATIC_TIMEOUT = 27; // 27 seconds
+    // uint256 private constant DAI_TIMEOUT = 27; // 27 seconds
+    // uint256 private constant USDC_TIMEOUT = 27; // 27 seconds
 
     function staleCheckLatestRoundData(
         AggregatorV3Interface chainlinkFeed
