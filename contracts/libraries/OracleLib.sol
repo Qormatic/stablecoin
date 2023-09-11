@@ -18,14 +18,8 @@ library OracleLib {
     // different chains have different timeouts & different tokens can have different timeouts on the same chain
     //  MATIC (18), wETH (18), DAI (18), wBTC (8), USDC (6)
 
+    // pricefeeds are supposed to be updated every 27 seconds on olygon but in reality they can take longer
     uint256 private constant TIMEOUT = 90; // 90 seconds
-
-    // uint256 private constant WETH_TIMEOUT = 70; // 70 seconds
-    // uint256 private constant OTHER_TIMEOUT = 27; // 70 seconds
-    // uint256 private constant WBTC_TIMEOUT = 27; // 27 seconds
-    // uint256 private constant MATIC_TIMEOUT = 27; // 27 seconds
-    // uint256 private constant DAI_TIMEOUT = 27; // 27 seconds
-    // uint256 private constant USDC_TIMEOUT = 27; // 27 seconds
 
     function staleCheckLatestRoundData(
         AggregatorV3Interface chainlinkFeed
