@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/qormaq/Desktop/Github/StableCoin/contracts/DSCEngine.sol": {
-      "lastModificationDate": 1691418596295,
-      "contentHash": "703de2278cdef87862acc0c4989676e2",
+      "lastModificationDate": 1694462993911,
+      "contentHash": "ed2233156a3b4ae7116922369f9e3be5",
       "sourceName": "contracts/DSCEngine.sol",
       "solcConfig": {
         "version": "0.8.19",
@@ -50,8 +50,8 @@
       ]
     },
     "/Users/qormaq/Desktop/Github/StableCoin/contracts/DecentralizedStableCoin.sol": {
-      "lastModificationDate": 1691164509988,
-      "contentHash": "c9cc3fb83b13857cdb6889818b23b2a2",
+      "lastModificationDate": 1694453665651,
+      "contentHash": "0d5a0269a4886c431007e7f6e3352049",
       "sourceName": "contracts/DecentralizedStableCoin.sol",
       "solcConfig": {
         "version": "0.8.19",
@@ -95,8 +95,8 @@
       ]
     },
     "/Users/qormaq/Desktop/Github/StableCoin/contracts/libraries/OracleLib.sol": {
-      "lastModificationDate": 1691520651782,
-      "contentHash": "cfdb9966059a83673d74fe015dbe5d98",
+      "lastModificationDate": 1694443294482,
+      "contentHash": "eb910c905462160f6f6c019cf205d6c3",
       "sourceName": "contracts/libraries/OracleLib.sol",
       "solcConfig": {
         "version": "0.8.19",

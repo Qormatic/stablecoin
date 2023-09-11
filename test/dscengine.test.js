@@ -31,13 +31,6 @@ const { developmentChains } = require("../helper-hardhat-config")
               console.log("user2", user2.address)
               console.log("liquidator", liquidator.address)
 
-              // accounts[0]    // 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-              // accounts[1]    // 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
-              // accounts[2]    // 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC
-              // accounts[3]    // 0x90F79bf6EB2c4f870365E785982E1f101E93b906
-              // accounts[4]    // 0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65
-              // accounts[5]    // 0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc
-
               // deployments.fixture runs all our deploy scripts with the tag "test"
               // By default it deploys with whichever account is account[0] - deployer in our case
               await deployments.fixture(["test"])

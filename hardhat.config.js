@@ -136,6 +136,7 @@ module.exports = {
         noColors: true,
         showTimeSpent: false,
         outputFile: "gas-report.txt",
+        onlyCalledMethods: false,
         // coinmarketcap: process.env.COINMARKETCAP_API_KEY,
     },
     contractSizer: {
