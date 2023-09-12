@@ -30,7 +30,10 @@ import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/Ag
 import {OracleLib} from "./libraries/OracleLib.sol";
 
 /**
- * The system is designed to be as minimal as possible, and have the tokens maintain a 1 token == $1 peg.
+ * The system is designed to be as minimal as possible, and have the tokens maintain a 1 token == $1 peg
+ * The system is designed to be overcollateralized, and liquidators are incentivized to liquidate users who are below the liquidation threshold
+ * The system ensures a 2-to-1 collateral backing, meaning for every $1 of DSC minted, there is $2 in collateral value."
+ *
  * This stablecoin has the properties:
  * - Exogenous Collateral
  * - Dollar Pegged
@@ -145,6 +148,7 @@ contract DSCEngine is ReentrancyGuard {
      * @param amountCollateral The amount of collateral to deposit
      * @param amountDscToMint The amount of decentralized stablecoin to mint
      * @notice this function will deposit your collateral and mint DSC in one transaction
+     * @notice if collateral value were $3000 user could mint a maximum of $1500 worth of DSC or 1500 DSC tokens
      */
     function depositCollateralAndMintDsc(
         address tokenCollateralAddress,
@@ -159,7 +163,7 @@ contract DSCEngine is ReentrancyGuard {
      * @notice follows CEI
      * @param tokenCollateralAddress The address of the token to deposit as collateral
      * @param amountCollateral The amount of collateral to deposit
-     * @notice user needs to approve this contract in the ERC20 collateral contract before transferring their collateral - handled on the frontend
+     * @notice user needs to approve DSCEngine in the ERC20 collateral contract for amountCollateral before calling depositCollateral - handled on the frontend
      */
     function depositCollateral(
         address tokenCollateralAddress,
@@ -227,6 +231,7 @@ contract DSCEngine is ReentrancyGuard {
 
     /*
      * @notice user can burn their DSC if they are approaching the liquidation threshold and improve their health factor
+     * @notice user needs to approve DSCEngine in the DSC contract for amount before calling burnDsc - handled on the frontend
      */
     function burnDsc(uint256 amount) public moreThanZero(amount) {
         _burnDsc(amount, msg.sender, msg.sender);

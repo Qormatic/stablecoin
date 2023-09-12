@@ -31,7 +31,8 @@ const { developmentChains } = require("../helper-hardhat-config")
               startedAt,
               MAX_UINT256,
               liquidator_coinContract,
-              liquidator_wethContract
+              liquidator_wethContract,
+              justTooMuchAmountDscToMint
 
           beforeEach(async () => {
               accounts = await ethers.getSigners()
@@ -73,8 +74,9 @@ const { developmentChains } = require("../helper-hardhat-config")
               lowDepositAmount = ethers.utils.parseEther("2") // 2e18
               depositAmount = ethers.utils.parseEther("3") // 3e18
               largeDepositAmount = ethers.utils.parseEther("6") // 5e18
-              amountDscToMint = ethers.utils.parseEther("1") // 1e18
-              largeAmountDSCToMint = ethers.utils.parseEther("2") // 2e18
+              amountDscToMint = ethers.utils.parseEther("1000") // 1e18
+              justTooMuchAmountDscToMint = ethers.utils.parseEther("1501") // 1e18
+              largeAmountDSCToMint = ethers.utils.parseEther("2000") // 2e18
               MAX_UINT256 = ethers.constants.MaxUint256
           })
 
@@ -183,6 +185,26 @@ const { developmentChains } = require("../helper-hardhat-config")
                       preDscBalance.add(amountDscToMint).toString() == postDscBalance.toString()
                   )
               })
+
+              it("deposits collateral, mints DSC and user balances updated correctly", async function () {
+                  const preDepositUserBalance = await user_DSCE.getCollateralBalanceOfUser(
+                      user.address,
+                      wethContract.address
+                  )
+                  const preDscBalance = await coinContract.balanceOf(user.address)
+
+                  console.log("preDepositUserBalance", preDepositUserBalance.toString())
+                  console.log("preDscBalance", preDscBalance.toString())
+                  console.log("amountDscToMint", amountDscToMint.toString())
+
+                  await expect(
+                      user_DSCE.depositCollateralAndMintDsc(
+                          wethContract.address,
+                          depositAmount,
+                          justTooMuchAmountDscToMint
+                      )
+                  ).to.be.revertedWith("DSCEngine__BreaksHealthFactor")
+              })
           })
 
           ///////////////////
@@ -209,18 +231,17 @@ const { developmentChains } = require("../helper-hardhat-config")
                   await user_DSCE.depositCollateralAndMintDsc(
                       wethContract.address,
                       ethers.utils.parseEther("1"), // deposit 1 WETH
-                      ethers.utils.parseEther("50") // mint 1 DSC
+                      ethers.utils.parseEther("500") // mint 1 DSC
                   )
 
                   await liquidator_DSCE.depositCollateralAndMintDsc(
                       wethContract.address,
                       ethers.utils.parseEther("2"),
-                      ethers.utils.parseEther("100")
+                      ethers.utils.parseEther("800")
                   )
 
                   roundId = "2"
-                  priceDrop = "99000000000000000000"
-                  //   priceDrop = "1000000000000000000000"
+                  priceDrop = "990000000000000000000" // HF 990 000 000 000 000 000
                   let currentTime = (await ethers.provider.getBlock("latest")).timestamp
                   timeStamp = currentTime - 10
                   startedAt = currentTime - 10

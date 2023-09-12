@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/qormaq/Desktop/Github/StableCoin/contracts/DSCEngine.sol": {
-      "lastModificationDate": 1694537798976,
-      "contentHash": "c1c1039771a282a98724f8102577eed3",
+      "lastModificationDate": 1694540331642,
+      "contentHash": "4df6265b6d39ed17f087b9e52a74a9e1",
       "sourceName": "contracts/DSCEngine.sol",
       "solcConfig": {
         "version": "0.8.19",
