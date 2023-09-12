@@ -30,21 +30,13 @@ import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/Ag
 import {OracleLib} from "./libraries/OracleLib.sol";
 
 /**
- * @title DSCEngine
- * @author Patrick Collins
- *
  * The system is designed to be as minimal as possible, and have the tokens maintain a 1 token == $1 peg.
  * This stablecoin has the properties:
  * - Exogenous Collateral
  * - Dollar Pegged
  * - Algoritmically Stable
  *
- * It is similar to DAI if DAI had no governance, no fees, and was only backed by WETH and WBTC.
- *
- * Our DSC system should always be "overcollateralized". At no point, should the value of all collateral <= the $ backed value of all the DSC.
- *
- * @notice This contract is the core of the DSC System. It handles all the logic for mining and redeeming DSC, as well as depositing & withdrawing collateral.
- * @notice This contract is VERY loosely based on the MakerDAO DSS (DAI) system.
+ * @notice This contract handles all the logic for mining and redeeming DSC, as well as depositing & withdrawing collateral.
  */
 contract DSCEngine is ReentrancyGuard {
     //////////////////
@@ -88,9 +80,9 @@ contract DSCEngine is ReentrancyGuard {
 
     DecentralizedStableCoin private immutable i_dsc;
 
-    /////////////////////
-    // Events          //
-    /////////////////////
+    ////////////
+    // Events //
+    ////////////
 
     event CollateralDeposited(address indexed user, address indexed token, uint256 indexed amount);
     event CollateralRedeemed(
@@ -100,9 +92,9 @@ contract DSCEngine is ReentrancyGuard {
         uint256 amount
     );
 
-    //////////////////
-    // Modifiers    //
-    //////////////////
+    ///////////////
+    // Modifiers //
+    ///////////////
 
     modifier moreThanZero(uint256 amount) {
         if (amount == 0) {
@@ -118,9 +110,9 @@ contract DSCEngine is ReentrancyGuard {
         _;
     }
 
-    //////////////////
-    // Functions    //
-    //////////////////
+    ///////////////
+    // Functions //
+    ///////////////
 
     constructor(
         address[] memory tokenAddresses,
@@ -144,9 +136,9 @@ contract DSCEngine is ReentrancyGuard {
         i_dsc = DecentralizedStableCoin(dscAddress);
     }
 
-    ///////////////////////////
-    // External Functions    //
-    ///////////////////////////
+    ////////////////////////
+    // External Functions //
+    ////////////////////////
 
     /*
      * @param tokenCollateralAddress The address of the token to deposit as collateral
@@ -167,6 +159,7 @@ contract DSCEngine is ReentrancyGuard {
      * @notice follows CEI
      * @param tokenCollateralAddress The address of the token to deposit as collateral
      * @param amountCollateral The amount of collateral to deposit
+     * @notice user needs to approve this contract in the ERC20 collateral contract before transferring their collateral - handled on the frontend
      */
     function depositCollateral(
         address tokenCollateralAddress,
@@ -185,6 +178,25 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     /*
+     * @notice follows CEI
+     * @param amountDscToMint The amount of decentralized stablecoin to mint
+     * @notice they must have more collateral value than the minimum threshold
+     */
+    function mintDsc(uint256 amountDscToMint) public moreThanZero(amountDscToMint) nonReentrant {
+        // check for minimum amount of DSC minted to incentivize liquidators; otherwise gas makes liquidating uneconomical
+
+        // 1. find gas cost of liquidate => 128480 gas
+        // 2. find min amount of DSC to make liquidate profitable =>
+
+        s_DSCMinted[msg.sender] += amountDscToMint;
+        _revertIfHealthFactorIsBroken(msg.sender);
+        bool minted = i_dsc.mint(msg.sender, amountDscToMint);
+        if (!minted) {
+            revert DSCEngine__MintFailed();
+        }
+    }
+
+    /*
      * @param tokenCollateralAddress The collateral address to redeem
      * @param amountCollateral The amount of collateral to redeem
      * @param amountDscToBurn The amount of DSC to burn
@@ -197,7 +209,6 @@ contract DSCEngine is ReentrancyGuard {
     ) external {
         burnDsc(amountDscToBurn);
         redeemCollateral(tokenCollateralAddress, amountCollateral);
-        // redeemCollateral already checks health factor
     }
 
     /*
@@ -215,22 +226,6 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     /*
-     * @notice follows CEI
-     * @param amountDscToMint The amount of decentralized stablecoin to mint
-     * @notice they must have more collateral value than the minimum threshold
-     */
-    function mintDsc(uint256 amountDscToMint) public moreThanZero(amountDscToMint) nonReentrant {
-        // should be a check that minimum amount of DSC minted is more than gas cost of liquidation to icentivize liquidators
-
-        s_DSCMinted[msg.sender] += amountDscToMint;
-        _revertIfHealthFactorIsBroken(msg.sender);
-        bool minted = i_dsc.mint(msg.sender, amountDscToMint);
-        if (!minted) {
-            revert DSCEngine__MintFailed();
-        }
-    }
-
-    /*
      * @notice user can burn their DSC if they are approaching the liquidation threshold and improve their health factor
      */
     function burnDsc(uint256 amount) public moreThanZero(amount) {
@@ -241,7 +236,7 @@ contract DSCEngine is ReentrancyGuard {
     /*
      * @param collateral The erc20 collateral address to liquidate from the user
      * @param user The user who has broken the health factor. Their _healthFactor should be below MIN_HEALTH_FACTOR
-     * @param debtToCover The amount of the liquidator's own DSC (in wei) they burn to improve the users health factor
+     * @param debtToCover The amount of the liquidator's own DSC (in wei) they transfer to DSCEngine to improve the users health factor
      * @notice You can partially liquidate a user.
      * @notice You will get a liquidation bonus for taking the users funds
      * @notice This function assumes the protocol is 200% overcollateralized in order for it to work
@@ -300,11 +295,13 @@ contract DSCEngine is ReentrancyGuard {
      * @dev Low-level internal function, do not call unless the function calling it is checking for health factors being broken
      */
     function _burnDsc(uint256 amountDscToBurn, address onBehalfOf, address dscFrom) private {
+        // 1. liquidated user's DSC is burned
         s_DSCMinted[onBehalfOf] -= amountDscToBurn;
 
-        // liquidator transfers DSC of amountDscToBurn to this contract
+        // 2. liquidator transfers DSC of amountDscToBurn to this contract
         i_dsc.transferFrom(dscFrom, address(this), amountDscToBurn);
-        // user DSC is burnt
+
+        // 3. liquidator's transferred DSC is burned
         i_dsc.burn(amountDscToBurn);
     }
 
@@ -334,7 +331,7 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     /*
-     * @notice Returns how close to liquidation a user is; if below 1 they can get liquidated
+     * @notice Returns how close to liquidation a user is; if below 1e18 they can get liquidated
      */
     function _healthFactor(address user) private view returns (uint256) {
         (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);

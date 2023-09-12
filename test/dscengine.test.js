@@ -16,14 +16,28 @@ const { developmentChains } = require("../helper-hardhat-config")
               user_DSCE,
               user2_DSCE,
               user_coinContract,
+              user_Mock,
               deployer_DSCE,
-              liquidator_DSCE
+              liquidator_DSCE,
+              lowDepositAmount,
+              depositAmount,
+              largeDepositAmount,
+              amountDscToMint,
+              largeAmountDSCToMint,
+              MockV3Aggregator,
+              roundId,
+              priceDrop,
+              timeStamp,
+              startedAt,
+              MAX_UINT256,
+              liquidator_coinContract,
+              liquidator_wethContract
 
           beforeEach(async () => {
               accounts = await ethers.getSigners()
               deployer = accounts[0]
               user = accounts[1]
-              user2 = accounts[2] // for setting up new 721Contract via factory
+              user2 = accounts[2]
               liquidator = accounts[3]
 
               console.log("deployer", deployer.address)
@@ -39,124 +53,229 @@ const { developmentChains } = require("../helper-hardhat-config")
               wethContract = await ethers.getContract("WETH9")
               dsceContract = await ethers.getContract("DSCEngine")
               coinContract = await ethers.getContract("DecentralizedStableCoin")
+              MockV3Aggregator = await ethers.getContract("MockV3Aggregator")
 
               user_DSCE = dsceContract.connect(user)
-              user2_DSCE = dsceContract.connect(user2)
-              user_wethContract = wethContract.connect(user)
+              user_Mock = MockV3Aggregator.connect(user)
               user_coinContract = coinContract.connect(user)
+              user_wethContract = wethContract.connect(user)
+              user2_DSCE = dsceContract.connect(user2)
+              user2_wethContract = wethContract.connect(user2)
               deployer_DSCE = dsceContract.connect(deployer)
               liquidator_DSCE = dsceContract.connect(liquidator)
+              liquidator_coinContract = coinContract.connect(liquidator)
+              liquidator_wethContract = wethContract.connect(liquidator)
 
               // user gets WETH tokens which he can use as collateral
               await user_wethContract.deposit({ value: ethers.utils.parseEther("3") })
-              await user_wethContract.withdraw(ethers.utils.parseEther("3"))
-              const collateralTokens = await user_DSCE.getCollateralTokens()
-              const pricefeed = await user_DSCE.getCollateralTokenPriceFeed(collateralTokens[0])
+              await liquidator_wethContract.deposit({ value: ethers.utils.parseEther("5") })
 
-              //   const userBalance = await user_wethContract.balanceOf(user.address)
-
-              //   console.log("userBalance", userBalance.toString())
-              console.log("collateralTokens", collateralTokens)
-              console.log("pricefeed", pricefeed)
+              lowDepositAmount = ethers.utils.parseEther("2") // 2e18
+              depositAmount = ethers.utils.parseEther("3") // 3e18
+              largeDepositAmount = ethers.utils.parseEther("6") // 5e18
+              amountDscToMint = ethers.utils.parseEther("1") // 1e18
+              largeAmountDSCToMint = ethers.utils.parseEther("2") // 2e18
+              MAX_UINT256 = ethers.constants.MaxUint256
           })
 
-          /////////////////////
-          //  createOffer()  //
-          /////////////////////
+          ///////////////////////////
+          //  depositCollateral()  //
+          ///////////////////////////
 
           describe("depositCollateral", function () {
-              beforeEach(async () => {})
+              beforeEach(async () => {
+                  // approve the DSCEngine to spend WETH on behalf of the user
+                  await user_wethContract.approve(dsceContract.address, MAX_UINT256)
+                  await liquidator_wethContract.approve(dsceContract.address, MAX_UINT256)
+              })
 
-              it.only("tokens are sent and received correctly", async function () {
-                  await user_wethContract.approve(
-                      dsceContract.address,
-                      ethers.utils.parseEther("3")
-                  )
-
-                  console.log("here1")
-
-                  await user_DSCE.depositCollateral(
-                      wethContract.address,
-                      ethers.utils.parseEther("3")
-                  )
-
-                  console.log("here2")
-
-                  const collateralBalance = await user_DSCE.getCollateralBalanceOfUser(
+              it("collateral deposited and user balance updated correctly", async function () {
+                  const preDepositUserBalance = await user_DSCE.getCollateralBalanceOfUser(
                       user.address,
                       wethContract.address
                   )
 
-                  console.log("collateralBalance", collateralBalance)
+                  await user_DSCE.depositCollateral(wethContract.address, depositAmount)
 
-                  //   assert(
-                  //       preFundContractBalance.add(_price).toString() ==
-                  //           postFundContractBalance.toString()
-                  //   )
+                  const postDepositUserBalance = await user_DSCE.getCollateralBalanceOfUser(
+                      user.address,
+                      wethContract.address
+                  )
+
+                  console.log("postDepositUserBalance", postDepositUserBalance.toString())
+
+                  // Check that the user's collateral balance has increased by the deposit amount
+                  assert(
+                      preDepositUserBalance.add(depositAmount).toString() ==
+                          postDepositUserBalance.toString()
+                  )
+              })
+          })
+
+          /////////////////
+          //  mintDSC()  //
+          /////////////////
+
+          describe("mintDSC", function () {
+              beforeEach(async () => {
+                  // approve the DSCEngine to spend WETH on behalf of the user
+                  await user_wethContract.approve(dsceContract.address, MAX_UINT256)
+
+                  await user_DSCE.depositCollateral(wethContract.address, depositAmount)
               })
 
-              it("reverts if item is already on offer", async function () {
-                  expect(
-                      await nftMarketplaceOther.createOffer(_nftAddress, _tokenId, {
-                          value: _price,
-                      })
-                  ).to.emit("OfferCreated")
+              it("mints DSC and user balance updated correctly", async function () {
+                  const preDscBalance = await coinContract.balanceOf(user.address)
+                  console.log("preDscBalance", preDscBalance.toString())
 
-                  await expect(
-                      nftMarketplaceOther.createOffer(_nftAddress, _tokenId, {
-                          value: _price,
-                      })
-                  ).to.be.revertedWith("Seal_NFTMarketplace__OfferAlreadyExists")
+                  console.log("amountDscToMint", amountDscToMint.toString())
+
+                  await user_DSCE.mintDsc(amountDscToMint)
+
+                  const postDscBalance = await coinContract.balanceOf(user.address)
+                  console.log("postDscBalance", postDscBalance.toString())
+
+                  // user DSC balance should have increased by amountDscToMint
+                  assert(
+                      preDscBalance.add(amountDscToMint).toString() == postDscBalance.toString()
+                  )
+              })
+          })
+
+          /////////////////////////////////////
+          //  depositCollateralAndMintDsc()  //
+          /////////////////////////////////////
+
+          describe("depositCollateralAndMintDsc", function () {
+              beforeEach(async () => {
+                  // approve the DSCEngine to spend WETH on behalf of the user
+                  await user_wethContract.approve(dsceContract.address, MAX_UINT256)
               })
 
-              it("reverts if item has already been listed", async function () {
-                  await nftMarketplaceDeployer.listItem(_nftAddress, _tokenId, _price)
+              it("deposits collateral, mints DSC and user balances updated correctly", async function () {
+                  const preDepositUserBalance = await user_DSCE.getCollateralBalanceOfUser(
+                      user.address,
+                      wethContract.address
+                  )
+                  const preDscBalance = await coinContract.balanceOf(user.address)
 
-                  await expect(
-                      nftMarketplaceOther.createOffer(_nftAddress, _tokenId, {
-                          value: _price,
-                      })
-                  ).to.be.revertedWith("Seal_NFTMarketplace__AlreadyListed")
+                  console.log("preDepositUserBalance", preDepositUserBalance.toString())
+                  console.log("preDscBalance", preDscBalance.toString())
+                  console.log("amountDscToMint", amountDscToMint.toString())
+
+                  await user_DSCE.depositCollateralAndMintDsc(
+                      wethContract.address,
+                      depositAmount,
+                      amountDscToMint
+                  )
+
+                  const postDepositUserBalance = await user_DSCE.getCollateralBalanceOfUser(
+                      user.address,
+                      wethContract.address
+                  )
+                  const postDscBalance = await coinContract.balanceOf(user.address)
+
+                  console.log("postDepositUserBalance", postDepositUserBalance.toString())
+                  console.log("postDscBalance", postDscBalance.toString())
+
+                  // user DSC balance should have increased by amountDscToMint
+                  assert(
+                      preDscBalance.add(amountDscToMint).toString() == postDscBalance.toString()
+                  )
+              })
+          })
+
+          ///////////////////
+          //  liquidate()  //
+          ///////////////////
+
+          describe("liquidate", function () {
+              beforeEach(async () => {
+                  // approve the DSCEngine to spend WETH on behalf of the user
+                  await user_wethContract.approve(dsceContract.address, MAX_UINT256)
+                  await liquidator_wethContract.approve(dsceContract.address, MAX_UINT256)
+                  await liquidator_coinContract.approve(dsceContract.address, MAX_UINT256)
+
+                  const allowance = await user_wethContract.allowance(
+                      user.address,
+                      dsceContract.address
+                  )
+
+                  console.log("allowance: ", allowance.toString())
+
+                  const collateralTokens = await dsceContract.getCollateralTokens()
+                  console.log("collateralTokens", collateralTokens)
+
+                  await user_DSCE.depositCollateralAndMintDsc(
+                      wethContract.address,
+                      ethers.utils.parseEther("1"), // deposit 1 WETH
+                      ethers.utils.parseEther("50") // mint 1 DSC
+                  )
+
+                  await liquidator_DSCE.depositCollateralAndMintDsc(
+                      wethContract.address,
+                      ethers.utils.parseEther("2"),
+                      ethers.utils.parseEther("100")
+                  )
+
+                  roundId = "2"
+                  priceDrop = "99000000000000000000"
+                  //   priceDrop = "1000000000000000000000"
+                  let currentTime = (await ethers.provider.getBlock("latest")).timestamp
+                  timeStamp = currentTime - 10
+                  startedAt = currentTime - 10
               })
 
-              it("reverts if item is already on auction", async function () {
-                  const nftAuctionContract = await ethers.getContract("Seal_NFTAuction")
-                  const nftAuctionDeployer = nftAuctionContract.connect(deployer)
-                  await basicNftDeployer.setApprovalForAll(nftAuctionContract.address, true)
+              it.only("liquidate", async function () {
+                  ////// MIN_HEALTH_FACTOR = 1e18 //////
 
-                  const _minBidReserve = true
-                  const _reservePrice = ethers.utils.parseEther("0.1") // 1e17
+                  const preHF = await user_DSCE.getHealthFactor(user.address)
 
-                  expect(
-                      await nftAuctionDeployer.createAuction(
-                          _nftAddress,
-                          _tokenId,
-                          _reservePrice,
-                          _minBidReserve
-                      )
-                  ).to.emit("AuctionCreated")
+                  const preWethBalance = await user_DSCE.getCollateralBalanceOfUser(
+                      user.address,
+                      wethContract.address
+                  )
 
-                  await expect(
-                      nftMarketplaceOther.createOffer(_nftAddress, _tokenId, {
-                          value: _price,
-                      })
-                  ).to.be.revertedWith("Seal_NFTMarketplace__AuctionExists")
-              })
+                  const preDollarValueOfCollateral = await user_DSCE.getAccountCollateralValue(
+                      user.address
+                  )
 
-              it("reverts if item is not 721", async function () {
-                  await expect(
-                      nftMarketplaceOther.createOffer(_1155Address, _tokenId, {
-                          value: _price,
-                      })
-                  ).to.be.revertedWith("Seal_NFTMarketplace__ContractNotCompatible")
-              })
+                  console.log("preHF: ", preHF.toString())
+                  console.log("preWethBalance: ", preWethBalance.toString())
+                  console.log(
+                      "preDollarValueOfCollateral: ",
+                      "$" + preDollarValueOfCollateral.toString()
+                  )
 
-              it("reverts if value is less than s_minPrice", async function () {
-                  await expect(
-                      nftMarketplaceOther.createOffer(_nftAddress, _tokenId, {
-                          value: _lowPrice,
-                      })
-                  ).to.be.revertedWith("Seal_NFTMarketplace__PriceTooLow")
+                  // get current value of wETH wrt $USD
+                  const price = await user_Mock.latestRoundData()
+                  console.log("price", price.toString())
+
+                  // price drop by 50%
+                  await user_Mock.updateRoundData(roundId, priceDrop, timeStamp, startedAt)
+
+                  const newPrice = await user_Mock.latestRoundData()
+                  console.log("newPrice", newPrice.toString())
+
+                  const postHF = await user_DSCE.getHealthFactor(user.address)
+
+                  const postWethBalance = await user_DSCE.getCollateralBalanceOfUser(
+                      user.address,
+                      wethContract.address
+                  )
+
+                  const postDollarValueOfCollateral = await user_DSCE.getAccountCollateralValue(
+                      user.address
+                  )
+
+                  console.log("postHF: ", postHF.toString())
+                  console.log("postWethBalance: ", postWethBalance.toString())
+                  console.log(
+                      "postDollarValueOfCollateral: ",
+                      "$" + postDollarValueOfCollateral.toString()
+                  )
+
+                  await liquidator_DSCE.liquidate(wethContract.address, user.address, MAX_UINT256)
               })
           })
       })

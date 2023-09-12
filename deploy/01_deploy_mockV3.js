@@ -1,5 +1,10 @@
 const { network } = require("hardhat")
-const { developmentChains, VERIFICATION_BLOCK_CONFIRMATIONS } = require("../helper-hardhat-config")
+const {
+    developmentChains,
+    VERIFICATION_BLOCK_CONFIRMATIONS,
+    DECIMALS,
+    INITIAL_ANSWER,
+} = require("../helper-hardhat-config")
 const { verify } = require("../utils/verify")
 
 // Specific network config is taken by HRE from hardhat.config.js and initialised when this script is run
@@ -14,17 +19,16 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
 
     log("----------------------------------------------------")
 
-    const DECIMALS = 8
-    const ETH_USD_PRICE = 200000000000
+    const arguments = [DECIMALS, INITIAL_ANSWER]
 
-    // arguments is blank bcos we dont have any constructor in our contract
-    const arguments = [DECIMALS, ETH_USD_PRICE]
-    await deploy("MockV3Aggregator", {
-        from: DEPLOYER,
-        args: arguments,
-        log: true,
-        waitConfirmations: waitBlockConfirmations,
-    })
+    if (developmentChains.includes(network.name)) {
+        log("Local network detected; deploying mocks...!")
+        await deploy("MockV3Aggregator", {
+            from: DEPLOYER,
+            args: arguments,
+            log: true,
+        })
+    }
 
     log("----------------------------------------------------")
 }
