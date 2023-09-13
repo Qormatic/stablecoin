@@ -57,6 +57,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenAlreadyAdded();
     error DSCEngine__DscBelowThreshold();
     error DSCEngine__BelowMinDscLevel(uint256 dscMinted);
+    error DSCEngine__InvalidZeroAddress();
 
     //////////
     // Type //
@@ -95,6 +96,15 @@ contract DSCEngine is ReentrancyGuard {
         address indexed token,
         uint256 amount
     );
+    event DscMinted(address indexed user, uint256 indexed amount);
+    event DscBurnt(address indexed liquidator, uint256 indexed amount, address indexed user);
+    event UserLiquidated(
+        address indexed liquidator,
+        address indexed user,
+        address collateral,
+        uint256 indexed debtToCover,
+        uint256 totalCollateralToRedeem
+    );
 
     ///////////////
     // Modifiers //
@@ -127,13 +137,17 @@ contract DSCEngine is ReentrancyGuard {
         if (tokenAddresses.length != priceFeedAddresses.length) {
             revert DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
         }
-        // Whitelist to accept wMATIC (18), wETH (18), DAI (18), wBTC (8), USDC (6)
-        // None of these tokens are fee on transfer tokens
+        // Whitelist to accept wMATIC (18), wETH (18), DAI (18), wBTC (8), USDC (6); leaving array length unbounded in case that changes
+        // None of these tokens implement fee-on-transfer
         // USDC uses a proxy / implementation contract which could be changed
         for (uint256 i = 0; i < tokenAddresses.length; i++) {
             if (s_priceFeeds[tokenAddresses[i]] != address(0)) {
                 revert DSCEngine__TokenAlreadyAdded();
             }
+            if (tokenAddresses[i] == address(0) || priceFeedAddresses[i] == address(0)) {
+                revert DSCEngine__InvalidZeroAddress();
+            }
+
             s_priceFeeds[tokenAddresses[i]] = priceFeedAddresses[i];
             s_collateralTokens.push(tokenAddresses[i]);
         }
@@ -203,6 +217,7 @@ contract DSCEngine is ReentrancyGuard {
         if (!minted) {
             revert DSCEngine__MintFailed();
         }
+        emit DscMinted(msg.sender, amountDscToMint);
     }
 
     /*
@@ -240,7 +255,6 @@ contract DSCEngine is ReentrancyGuard {
      */
     function burnDsc(uint256 amount) public moreThanZero(amount) {
         _burnDsc(amount, msg.sender, msg.sender);
-        _revertIfHealthFactorIsBroken(msg.sender); // I don't think this would ever hit...
     }
 
     /*
@@ -295,6 +309,8 @@ contract DSCEngine is ReentrancyGuard {
         if (endingUserHealthFactor <= startingUserHealthFactor) {
             revert DSCEngine__HealthFactorNotImproved();
         }
+
+        emit UserLiquidated(msg.sender, user, collateral, debtToCover, totalCollateralToRedeem);
     }
 
     //////////////////////////////////
@@ -313,6 +329,8 @@ contract DSCEngine is ReentrancyGuard {
 
         // 3. liquidator's transferred DSC is burned
         i_dsc.burn(amountDscToBurn);
+
+        emit DscBurnt(onBehalfOf, amountDscToBurn, dscFrom);
     }
 
     function _redeemCollateral(
@@ -370,9 +388,9 @@ contract DSCEngine is ReentrancyGuard {
         if (totalDscMinted == 0) return type(uint256).max;
 
         // if user has $3000 collateral and 1500 DSC they are 200% collateralized and their HF is 100% or 1e18
-        uint256 collateralAdjustedForThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) /
-            LIQUIDATION_PRECISION;
-        return (collateralAdjustedForThreshold * 1e18) / totalDscMinted;
+        return
+            (collateralValueInUsd * LIQUIDATION_THRESHOLD * 1e18) /
+            (LIQUIDATION_PRECISION * totalDscMinted);
     }
 
     //////////////////////////////////////////////
@@ -386,6 +404,9 @@ contract DSCEngine is ReentrancyGuard {
         address token,
         uint256 amountDSC
     ) public view returns (uint256) {
+        if (token == address(0)) {
+            revert DSCEngine__InvalidZeroAddress();
+        }
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
         (, int256 price, , , ) = priceFeed.staleCheckLatestRoundData();
 
@@ -418,6 +439,10 @@ contract DSCEngine is ReentrancyGuard {
      * @notice returns USD value for single token collateral
      */
     function getUsdValue(address token, uint256 amount) public view returns (uint256) {
+        if (token == address(0)) {
+            revert DSCEngine__InvalidZeroAddress();
+        }
+
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
         (, int256 price, , , ) = priceFeed.staleCheckLatestRoundData(); // price will be 1e8
 
