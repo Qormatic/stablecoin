@@ -41,11 +41,6 @@ const { developmentChains } = require("../helper-hardhat-config")
               user2 = accounts[2]
               liquidator = accounts[3]
 
-              console.log("deployer", deployer.address)
-              console.log("user", user.address)
-              console.log("user2", user2.address)
-              console.log("liquidator", liquidator.address)
-
               // deployments.fixture runs all our deploy scripts with the tag "test"
               // By default it deploys with whichever account is account[0] - deployer in our case
               await deployments.fixture(["test"])
@@ -68,8 +63,8 @@ const { developmentChains } = require("../helper-hardhat-config")
               liquidator_wethContract = wethContract.connect(liquidator)
 
               // user gets WETH tokens which he can use as collateral
-              await user_wethContract.deposit({ value: ethers.utils.parseEther("3") })
-              await liquidator_wethContract.deposit({ value: ethers.utils.parseEther("5") })
+              await user_wethContract.deposit({ value: ethers.utils.parseEther("50") })
+              await liquidator_wethContract.deposit({ value: ethers.utils.parseEther("50") })
 
               lowDepositAmount = ethers.utils.parseEther("2") // 2e18
               depositAmount = ethers.utils.parseEther("3") // 3e18
@@ -104,7 +99,15 @@ const { developmentChains } = require("../helper-hardhat-config")
                       wethContract.address
                   )
 
+                  const postDollarValueOfCollateral = await user_DSCE.getAccountCollateralValue(
+                      user.address
+                  )
+
                   console.log("postDepositUserBalance", postDepositUserBalance.toString())
+                  console.log(
+                      "postDollarValueOfCollateral: ",
+                      "$" + postDollarValueOfCollateral.toString()
+                  )
 
                   // Check that the user's collateral balance has increased by the deposit amount
                   assert(
@@ -142,6 +145,22 @@ const { developmentChains } = require("../helper-hardhat-config")
                       preDscBalance.add(amountDscToMint).toString() == postDscBalance.toString()
                   )
               })
+
+              it.only("fails if user DSC balance after mintDSC() will be less than 20", async function () {
+                  const preDscBalance = await coinContract.balanceOf(user.address)
+                  console.log("preDscBalance", preDscBalance.toString())
+
+                  const mappingBal = await user_DSCE.s_DSCMinted(user.address)
+                  console.log("mappingBal", mappingBal.toString())
+
+                  amountDscToMint = ethers.utils.parseEther("10")
+                  console.log("amountDscToMint", amountDscToMint.toString())
+
+                  // user DSC balance should have increased by amountDscToMint
+                  await expect(user_DSCE.mintDsc(amountDscToMint)).to.be.revertedWith(
+                      "DSCEngine__BelowMinDscLevel"
+                  )
+              })
           })
 
           /////////////////////////////////////
@@ -168,7 +187,7 @@ const { developmentChains } = require("../helper-hardhat-config")
                   await user_DSCE.depositCollateralAndMintDsc(
                       wethContract.address,
                       depositAmount,
-                      amountDscToMint
+                      ethers.utils.parseEther("1501")
                   )
 
                   const postDepositUserBalance = await user_DSCE.getCollateralBalanceOfUser(
@@ -182,7 +201,8 @@ const { developmentChains } = require("../helper-hardhat-config")
 
                   // user DSC balance should have increased by amountDscToMint
                   assert(
-                      preDscBalance.add(amountDscToMint).toString() == postDscBalance.toString()
+                      preDscBalance.add(ethers.utils.parseEther("1501")).toString() ==
+                          postDscBalance.toString()
                   )
               })
 
@@ -228,27 +248,99 @@ const { developmentChains } = require("../helper-hardhat-config")
                   const collateralTokens = await dsceContract.getCollateralTokens()
                   console.log("collateralTokens", collateralTokens)
 
-                  await user_DSCE.depositCollateralAndMintDsc(
-                      wethContract.address,
-                      ethers.utils.parseEther("1"), // deposit 1 WETH
-                      ethers.utils.parseEther("500") // mint 1 DSC
-                  )
-
                   await liquidator_DSCE.depositCollateralAndMintDsc(
                       wethContract.address,
-                      ethers.utils.parseEther("2"),
-                      ethers.utils.parseEther("800")
+                      ethers.utils.parseEther("6"), // deposit 6 WETH
+                      ethers.utils.parseEther("2000") // mint 2000 DSC
                   )
 
                   roundId = "2"
-                  priceDrop = "990000000000000000000" // HF 990 000 000 000 000 000
+                  priceDrop = "500000000000000000000" // 50% drop; mock initial price = 1e18
                   let currentTime = (await ethers.provider.getBlock("latest")).timestamp
                   timeStamp = currentTime - 10
                   startedAt = currentTime - 10
               })
 
-              it.only("liquidate", async function () {
+              it("liquidates user correctly", async function () {
                   ////// MIN_HEALTH_FACTOR = 1e18 //////
+
+                  const preDscBalance = await coinContract.balanceOf(user.address)
+
+                  // user starts at 200% collateralisation with 100% HF
+                  await user_DSCE.depositCollateralAndMintDsc(
+                      wethContract.address,
+                      ethers.utils.parseEther("1"), // deposit 1 WETH ($1000)
+                      ethers.utils.parseEther("500") // mint 500 DSC
+                  )
+
+                  const preHF = await user_DSCE.getHealthFactor(user.address)
+
+                  const preWethBalance = await user_DSCE.getCollateralBalanceOfUser(
+                      user.address,
+                      wethContract.address
+                  )
+
+                  const preDollarValueOfCollateral = await user_DSCE.getAccountCollateralValue(
+                      user.address
+                  )
+
+                  console.log("preDscBalance", preDscBalance.toString())
+                  console.log("preHF: ", preHF.toString())
+                  console.log("preWethBalance: ", preWethBalance.toString())
+                  console.log(
+                      "preDollarValueOfCollateral: ",
+                      "$" + preDollarValueOfCollateral.toString()
+                  )
+
+                  // get current value of wETH wrt $USD
+                  const price = await user_Mock.latestRoundData()
+                  console.log("price", price.toString())
+
+                  // price drop by 50%
+                  await user_Mock.updateRoundData(roundId, priceDrop, timeStamp, startedAt)
+
+                  const newPrice = await user_Mock.latestRoundData()
+                  console.log("newPrice", newPrice.toString())
+
+                  const postDscBalance = await coinContract.balanceOf(user.address) // 500 DSC
+
+                  const postHF = await user_DSCE.getHealthFactor(user.address)
+
+                  const postWethBalance = await user_DSCE.getCollateralBalanceOfUser(
+                      user.address,
+                      wethContract.address
+                  )
+
+                  const postDollarValueOfCollateral = await user_DSCE.getAccountCollateralValue(
+                      // $500 000 000 000 000 000 000
+                      user.address
+                  )
+
+                  console.log("postDscBalance", postDscBalance.toString())
+                  console.log("postHF: ", postHF.toString()) // 50%
+                  console.log("postWethBalance: ", postWethBalance.toString())
+                  console.log(
+                      "postDollarValueOfCollateral: ",
+                      "$" + postDollarValueOfCollateral.toString()
+                  )
+
+                  await liquidator_DSCE.liquidate(wethContract.address, user.address, MAX_UINT256)
+
+                  const user_DSC_Balance = await user_coinContract.balanceOf(user.address)
+                  const liq_DSC_Balance = await liquidator_coinContract.balanceOf(
+                      liquidator.address
+                  )
+
+                  console.log("user_DSC_Balance: ", user_DSC_Balance.toString())
+                  console.log("liq_DSC_Balance: ", liq_DSC_Balance.toString())
+              })
+
+              it("liquidate user correctly when user collateralisation between 100 - 110%", async function () {
+                  await user_DSCE.depositCollateralAndMintDsc(
+                      wethContract.address,
+                      ethers.utils.parseEther("3.24"), // deposit 3.24 wETH
+                      ethers.utils.parseEther("1500") // mint 1500 DSC
+                  )
 
                   const preHF = await user_DSCE.getHealthFactor(user.address)
 
@@ -272,7 +364,7 @@ const { developmentChains } = require("../helper-hardhat-config")
                   const price = await user_Mock.latestRoundData()
                   console.log("price", price.toString())
 
-                  // price drop by 50%
+                  // price drop by 50% will make user collateralisation 108% & HF 54%
                   await user_Mock.updateRoundData(roundId, priceDrop, timeStamp, startedAt)
 
                   const newPrice = await user_Mock.latestRoundData()
@@ -297,6 +389,14 @@ const { developmentChains } = require("../helper-hardhat-config")
                   )
 
                   await liquidator_DSCE.liquidate(wethContract.address, user.address, MAX_UINT256)
+
+                  const user_DSC_Balance = await user_coinContract.balanceOf(user.address)
+                  const liq_DSC_Balance = await liquidator_coinContract.balanceOf(
+                      liquidator.address
+                  )
+
+                  console.log("user_DSC_Balance: ", user_DSC_Balance.toString())
+                  console.log("liq_DSC_Balance: ", liq_DSC_Balance.toString())
               })
           })
       })

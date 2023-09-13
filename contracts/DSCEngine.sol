@@ -42,9 +42,9 @@ import {OracleLib} from "./libraries/OracleLib.sol";
  * @notice This contract handles all the logic for mining and redeeming DSC, as well as depositing & withdrawing collateral.
  */
 contract DSCEngine is ReentrancyGuard {
-    //////////////////
-    // Errors       //
-    //////////////////
+    ////////////
+    // Errors //
+    ////////////
 
     error DSCEngine__NeedsMoreThanZero();
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
@@ -56,10 +56,11 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__HealthFactorNotImproved();
     error DSCEngine__TokenAlreadyAdded();
     error DSCEngine__DscBelowThreshold();
+    error DSCEngine__BelowMinDscLevel(uint256 dscMinted);
 
-    //////////////////
-    // Type       //
-    //////////////////
+    //////////
+    // Type //
+    //////////
 
     using OracleLib for AggregatorV3Interface;
 
@@ -71,14 +72,14 @@ contract DSCEngine is ReentrancyGuard {
     uint256 private constant PRECISION = 1e18;
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // 200% overcollateralized
     uint256 private constant LIQUIDATION_PRECISION = 100;
-    uint256 private constant MIN_HEALTH_FACTOR = 1e18;
+    uint256 private constant MIN_HEALTH_FACTOR = 1e18; // 100% health factor or 1:1 collateralization
     uint256 private constant LIQUIDATION_BONUS = 10; // 10% of covered debt
-    uint256 private constant MIN_MINT_AMOUNT = 1e18;
+    uint256 private constant MIN_DSC_BALANCE = 10e18; // 10 DSC
 
     mapping(address token => address priceFeed) private s_priceFeeds; // tokenToPriceFeed
     mapping(address user => mapping(address token => uint256 amount))
         private s_collateralDeposited;
-    mapping(address user => uint256 amountDscMinted) private s_DSCMinted;
+    mapping(address user => uint256 amountDscMinted) public s_DSCMinted;
     address[] private s_collateralTokens;
 
     DecentralizedStableCoin private immutable i_dsc;
@@ -185,14 +186,18 @@ contract DSCEngine is ReentrancyGuard {
      * @notice follows CEI
      * @param amountDscToMint The amount of decentralized stablecoin to mint
      * @notice they must have more collateral value than the minimum threshold
+     * @notice user can mint DSC to the value of 50% of their collateral value (e.g. $3000 collateral -> 1500 DSC)
+     * @notice mininum DSC level is 10 DSC; low DSC debt can make liquidate() uneconomical for liquidators due to gas costs
      */
     function mintDsc(uint256 amountDscToMint) public moreThanZero(amountDscToMint) nonReentrant {
-        // check for minimum amount of DSC minted to incentivize liquidators; otherwise gas makes liquidating uneconomical
+        uint256 currentMinted = s_DSCMinted[msg.sender];
 
-        // 1. find gas cost of liquidate => 128480 gas
-        // 2. find min amount of DSC to make liquidate profitable =>
+        // Check if the amount after minting will be less than the minimum allowed balance
+        if (currentMinted + amountDscToMint < MIN_DSC_BALANCE) {
+            revert DSCEngine__BelowMinDscLevel(s_DSCMinted[msg.sender]);
+        }
 
-        s_DSCMinted[msg.sender] += amountDscToMint;
+        s_DSCMinted[msg.sender] = currentMinted + amountDscToMint;
         _revertIfHealthFactorIsBroken(msg.sender);
         bool minted = i_dsc.mint(msg.sender, amountDscToMint);
         if (!minted) {
@@ -268,15 +273,15 @@ contract DSCEngine is ReentrancyGuard {
         uint256 bonusCollateral = (tokenAmountFromDebtCovered * LIQUIDATION_BONUS) /
             LIQUIDATION_PRECISION;
 
-        // the bonusCollateral comes from the person being liquidated
-        uint256 totalCollateralToRedeem = tokenAmountFromDebtCovered + bonusCollateral;
+        // total amount we want to redeem (110% of debtCovered); bonusCollateral paid by person being liquidated out of their collateral
+        uint256 totalCollateralToRedeem = tokenAmountFromDebtCovered + bonusCollateral; // 110%
 
         // return the total amount of collateral (token) user has deposited
         uint256 totalDepositedCollateral = s_collateralDeposited[user][collateral];
 
         // If the amount to be redeemed exceeds what user has deposited, we redeem all their collateral instead e.g. their HF is between 100% < 110%
         if (
-            tokenAmountFromDebtCovered < totalDepositedCollateral &&
+            tokenAmountFromDebtCovered <= totalDepositedCollateral &&
             totalCollateralToRedeem > totalDepositedCollateral
         ) {
             totalCollateralToRedeem = totalDepositedCollateral;
@@ -300,7 +305,7 @@ contract DSCEngine is ReentrancyGuard {
      * @dev Low-level internal function, do not call unless the function calling it is checking for health factors being broken
      */
     function _burnDsc(uint256 amountDscToBurn, address onBehalfOf, address dscFrom) private {
-        // 1. liquidated user's DSC is burned
+        // 1. liquidated user's DSC removed from protocol mapping; cannot be used in the protocol anymore. It is not burned tho so user can use it elsewhere
         s_DSCMinted[onBehalfOf] -= amountDscToBurn;
 
         // 2. liquidator transfers DSC of amountDscToBurn to this contract
@@ -354,7 +359,7 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     /*
-     * @param LIQUIDATION_THRESHOLD is 50
+     * @param LIQUIDATION_THRESHOLD is 50 (indicating 200% collateralisation)
      * @param LIQUIDATION_PRECISION is 100
      */
     function _calculateHealthFactor(
@@ -363,6 +368,8 @@ contract DSCEngine is ReentrancyGuard {
     ) internal pure returns (uint256) {
         // return 2^256 - 1 if totalDscMinted == 0 i.e. healthFactor is 100%
         if (totalDscMinted == 0) return type(uint256).max;
+
+        // if user has $3000 collateral and 1500 DSC they are 200% collateralized and their HF is 100% or 1e18
         uint256 collateralAdjustedForThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) /
             LIQUIDATION_PRECISION;
         return (collateralAdjustedForThreshold * 1e18) / totalDscMinted;

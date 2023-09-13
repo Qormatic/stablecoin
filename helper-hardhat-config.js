@@ -12,7 +12,7 @@ const networkConfig = {
 const developmentChains = ["hardhat", "localhost"]
 const VERIFICATION_BLOCK_CONFIRMATIONS = 6
 const DECIMALS = "18"
-const INITIAL_ANSWER = "1000000000000000000000" // 2000e18 or $2000
+const INITIAL_ANSWER = "1000000000000000000000" // 1000e18 or $1000
 
 module.exports = {
     networkConfig,
