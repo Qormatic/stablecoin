@@ -32,7 +32,7 @@ import {OracleLib} from "./libraries/OracleLib.sol";
 /**
  * The system is designed to be as minimal as possible, and have the tokens maintain a 1 token == $1 peg
  * The system is designed to be overcollateralized, and liquidators are incentivized to liquidate users who are below the liquidation threshold
- * The system ensures a 2-to-1 collateral backing, meaning for every $1 of DSC minted, there is $2 in collateral value."
+ * The system ensures a 2-to-1 collateral backing, meaning for every $1 of DSC minted, there is $2 in collateral value.
  *
  * This stablecoin has the properties:
  * - Exogenous Collateral
@@ -317,11 +317,28 @@ contract DSCEngine is ReentrancyGuard {
     // Private & Internal Functions //
     //////////////////////////////////
 
+    function _redeemCollateral(
+        address from,
+        address to,
+        address tokenCollateralAddress,
+        uint256 amountCollateral
+    ) private {
+        // 1. liquidated user's collateral removed from DSCEngine mapping
+        s_collateralDeposited[from][tokenCollateralAddress] -= amountCollateral;
+        emit CollateralRedeemed(from, to, tokenCollateralAddress, amountCollateral);
+
+        // 2. liquidated user's collateral transferred to liquidator
+        bool success = IERC20(tokenCollateralAddress).transfer(to, amountCollateral);
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+    }
+
     /*
      * @dev Low-level internal function, do not call unless the function calling it is checking for health factors being broken
      */
     function _burnDsc(uint256 amountDscToBurn, address onBehalfOf, address dscFrom) private {
-        // 1. liquidated user's DSC removed from protocol mapping; cannot be used in the protocol anymore. It is not burned tho so user can use it elsewhere
+        // 1. liquidated user's DSC removed from DSCEngine mapping; cannot be used in the protocol anymore. It is not burned tho so user can use it elsewhere
         s_DSCMinted[onBehalfOf] -= amountDscToBurn;
 
         // 2. liquidator transfers DSC of amountDscToBurn to this contract
@@ -331,20 +348,6 @@ contract DSCEngine is ReentrancyGuard {
         i_dsc.burn(amountDscToBurn);
 
         emit DscBurnt(onBehalfOf, amountDscToBurn, dscFrom);
-    }
-
-    function _redeemCollateral(
-        address from,
-        address to,
-        address tokenCollateralAddress,
-        uint256 amountCollateral
-    ) private {
-        s_collateralDeposited[from][tokenCollateralAddress] -= amountCollateral;
-        emit CollateralRedeemed(from, to, tokenCollateralAddress, amountCollateral);
-        bool success = IERC20(tokenCollateralAddress).transfer(to, amountCollateral);
-        if (!success) {
-            revert DSCEngine__TransferFailed();
-        }
     }
 
     ////////////////////////////////////////////
